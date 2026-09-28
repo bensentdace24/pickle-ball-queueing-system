@@ -14,6 +14,16 @@ class QueueResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
-        return parent::toArray($request);
+        return [
+            'id' => $this->id,
+            'queue_number' => $this->queue_number,
+            'status' => $this->status,
+            'joined_at' => $this->joined_at,
+            'called_at' => $this->called_at,
+            'player' => new PlayerResource($this->whenLoaded('player')),
+            // filled in only when this queue entry is requested with its
+            // position computed by the controller (see below)
+            'position' => $this->when(isset($this->position), fn() => $this->position),
+        ];
     }
 }
