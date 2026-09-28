@@ -18,7 +18,9 @@ class CourtResource extends JsonResource
             'id' => $this->id,
             'name' => $this->name,
             'status' => $this->status,
-            'active_game' => new GameResource($this->whenLoaded('activeGame')),
+            'active_game' => $this->relationLoaded('activeGame') && $this->activeGame
+                ? new GameResource($this->activeGame)
+                : null,
         ];
     }
 }

@@ -26,7 +26,7 @@ class QueueService
                 ->exists();
 
             if ($existing) {
-                throw new \RuntimeException('Player already has an active queue entry.');
+                throw new \App\Exceptions\BusinessRuleException('Player already has an active queue entry.');
             }
 
             return Queue::create([
@@ -52,7 +52,7 @@ class QueueService
     public function cancel(Queue $queue): Queue
     {
         if (in_array($queue->status, [QueueStatus::Playing->value, QueueStatus::Completed->value, QueueStatus::Cancelled->value])) {
-            throw new \RuntimeException('Only a waiting or called queue entry can be cancelled.');
+            throw new \App\Exceptions\BusinessRuleException('Only a waiting or called queue entry can be cancelled.');
         }
 
         $queue->update(['status' => QueueStatus::Cancelled->value]);

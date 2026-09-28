@@ -21,11 +21,11 @@ class GameService
     public function assign(Court $court, array $queueIds): Game
     {
         if (count($queueIds) !== 4) {
-            throw new \RuntimeException('A game requires exactly 4 players.');
+            throw new \App\Exceptions\BusinessRuleException('A game requires exactly 4 players.');
         }
 
         if (count(array_unique($queueIds)) !== 4) {
-            throw new \RuntimeException('Duplicate queue entries selected.');
+            throw new \App\Exceptions\BusinessRuleException('Duplicate queue entries selected.');
         }
 
         return DB::transaction(function () use ($court, $queueIds) {
@@ -34,7 +34,7 @@ class GameService
             $court = Court::whereKey($court->id)->lockForUpdate()->firstOrFail();
 
             if ($court->status !== CourtStatus::Available->value) {
-                throw new \RuntimeException('Court is not available.');
+                throw new \App\Exceptions\BusinessRuleException('Court is not available.');
             }
 
             // Lock the queue rows we're about to consume.
@@ -44,14 +44,14 @@ class GameService
                 ->keyBy('id');
 
             if ($entries->count() !== 4) {
-                throw new \RuntimeException('One or more queue entries were not found.');
+                throw new \App\Exceptions\BusinessRuleException('One or more queue entries were not found.');
             }
 
             foreach ($queueIds as $id) {
                 $entry = $entries[$id];
 
                 if (! in_array($entry->status, [QueueStatus::Waiting->value, QueueStatus::Called->value])) {
-                    throw new \RuntimeException("Queue entry #{$entry->queue_number} is not eligible (status: {$entry->status}).");
+                    throw new \App\Exceptions\BusinessRuleException("Queue entry #{$entry->queue_number} is not eligible (status: {$entry->status}).");
                 }
             }
 
@@ -64,7 +64,7 @@ class GameService
                 ->exists();
 
             if ($alreadyPlaying) {
-                throw new \RuntimeException('One or more selected players are already in an active game.');
+                throw new \App\Exceptions\BusinessRuleException('One or more selected players are already in an active game.');
             }
 
             $game = Game::create([
@@ -102,7 +102,7 @@ class GameService
             $game = Game::whereKey($game->id)->lockForUpdate()->firstOrFail();
 
             if ($game->status !== GameStatus::Playing->value) {
-                throw new \RuntimeException('Game is not currently active.');
+                throw new \App\Exceptions\BusinessRuleException('Game is not currently active.');
             }
 
             $game->update([
