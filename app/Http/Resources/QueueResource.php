@@ -23,7 +23,10 @@ class QueueResource extends JsonResource
             'player' => new PlayerResource($this->whenLoaded('player')),
             // filled in only when this queue entry is requested with its
             // position computed by the controller (see below)
-            'position' => $this->when(isset($this->position), fn() => $this->position),
+            'position' => $this->getAttribute('position'),
+            'game' => $this->whenLoaded('gamePlayer', fn() => $this->gamePlayer?->game
+                ? new GameResource($this->gamePlayer->game)
+                : null),
         ];
     }
 }
