@@ -2,24 +2,16 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-class GamePlayer extends Model
+class MatchupPlayer extends Model
 {
-    use HasFactory;
+    protected $fillable = ['matchup_id', 'queue_id', 'player_id', 'side'];
 
-    protected $fillable = [
-        'game_id',
-        'player_id',
-        'queue_id',
-        'side',
-    ];
-
-    public function game(): BelongsTo
+    public function matchup(): BelongsTo
     {
-        return $this->belongsTo(Game::class);
+        return $this->belongsTo(Matchup::class);
     }
 
     public function player(): BelongsTo

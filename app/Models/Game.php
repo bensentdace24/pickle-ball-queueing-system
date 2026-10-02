@@ -16,6 +16,7 @@ class Game extends Model
         'status',
         'started_at',
         'completed_at',
+        'duration_minutes',
     ];
 
     protected $casts = [
@@ -36,5 +37,9 @@ class Game extends Model
     public function scopeActive($query)
     {
         return $query->where('status', 'playing');
+    }
+    public function scores(): HasMany
+    {
+        return $this->hasMany(Score::class);
     }
 }

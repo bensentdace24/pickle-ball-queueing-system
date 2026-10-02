@@ -15,15 +15,18 @@ class AssignGameRequest extends FormRequest
     {
         return [
             'court_id' => ['required', 'integer', 'exists:courts,id'],
-            'queue_ids' => ['required', 'array', 'size:4'],
-            'queue_ids.*' => ['integer', 'distinct', 'exists:queues,id'],
-        ];
-    }
-
-    public function messages(): array
-    {
-        return [
-            'queue_ids.size' => 'A game requires exactly 4 players.',
+            'duration_minutes' => ['nullable', 'integer', 'in:30,60,90,120'],
+            'assignments' => [
+                'required',
+                'array',
+                function ($attribute, $value, $fail) {
+                    if (! in_array(count($value), [2, 4], true)) {
+                        $fail('A game requires exactly 2 players (singles) or 4 players (doubles).');
+                    }
+                },
+            ],
+            'assignments.*.queue_id' => ['required', 'integer', 'distinct', 'exists:queues,id'],
+            'assignments.*.side' => ['required', 'integer', 'in:0,1'],
         ];
     }
 }

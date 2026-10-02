@@ -10,6 +10,8 @@ use App\Models\Court;
 use App\Models\Game;
 use App\Services\GameService;
 use Illuminate\Http\Request;
+use App\Http\Requests\FinishGameRequest;
+use App\Http\Requests\SmartAssignRequest;
 
 class GameController extends Controller
 {
@@ -24,7 +26,8 @@ class GameController extends Controller
         $allowed = ['playing', 'completed', 'cancelled', 'all'];
         $status = in_array($status, $allowed, true) ? $status : 'playing';
 
-        $games = Game::with('court', 'gamePlayers.player')
+
+        $games = Game::with('court', 'gamePlayers.player', 'scores')
             ->when($status !== 'all', fn($q) => $q->where('status', $status))
             ->orderByDesc('started_at')
             ->limit(50)
@@ -37,15 +40,36 @@ class GameController extends Controller
     public function store(AssignGameRequest $request)
     {
         $court = Court::findOrFail($request->validated('court_id'));
-        $game = $this->games->assign($court, $request->validated('queue_ids'));
+        $game = $this->games->assign(
+            $court,
+            $request->validated('assignments'),
+            $request->validated('duration_minutes'),
+        );
 
         return $this->success(new GameResource($game), 'Game started.', 201);
     }
 
-    public function finish(Game $game)
+
+    public function finish(FinishGameRequest $request, Game $game)
     {
-        $game = $this->games->finish($game);
+        $game = $this->games->finish(
+            $game,
+            $request->validated('team_a_score'),
+            $request->validated('team_b_score'),
+        );
 
         return $this->success(new GameResource($game), 'Game finished.');
+    }
+
+    public function smartAssign(SmartAssignRequest $request)
+    {
+        $court = Court::findOrFail($request->validated('court_id'));
+        $game = $this->games->smartAssign(
+            $court,
+            $request->validated('match_size'),
+            $request->validated('duration_minutes'),
+        );
+
+        return $this->success(new GameResource($game), 'Game started with balanced teams.', 201);
     }
 }
