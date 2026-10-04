@@ -1,0 +1,57 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Controller;
+use App\Http\Requests\FormMatchupRequest;
+use App\Http\Requests\SmartFormMatchupRequest;
+use App\Http\Requests\StartMatchupRequest;
+use App\Http\Resources\GameResource;
+use App\Http\Resources\MatchupResource;
+use App\Http\Traits\ApiResponse;
+use App\Models\Court;
+use App\Models\Matchup;
+use App\Services\MatchupService;
+
+class MatchupController extends Controller
+{
+    use ApiResponse;
+
+    public function __construct(private MatchupService $matchups) {}
+
+    public function index()
+    {
+        $pending = Matchup::with('matchupPlayers.player')->pending()->get();
+
+        return $this->success(MatchupResource::collection($pending));
+    }
+
+    public function store(FormMatchupRequest $request)
+    {
+        $matchup = $this->matchups->form($request->validated('assignments'), $request->validated('duration_minutes'));
+
+        return $this->success(new MatchupResource($matchup), 'Matchup formed.', 201);
+    }
+
+    public function smart(SmartFormMatchupRequest $request)
+    {
+        $matchup = $this->matchups->smartForm($request->validated('match_size'), $request->validated('duration_minutes'));
+
+        return $this->success(new MatchupResource($matchup), 'Balanced matchup formed.', 201);
+    }
+
+    public function start(StartMatchupRequest $request, Matchup $matchup)
+    {
+        $court = Court::findOrFail($request->validated('court_id'));
+        $game = $this->matchups->start($matchup, $court);
+
+        return $this->success(new GameResource($game), 'Matchup started.');
+    }
+
+    public function cancel(Matchup $matchup)
+    {
+        $matchup = $this->matchups->cancel($matchup);
+
+        return $this->success(new MatchupResource($matchup->load('matchupPlayers.player')), 'Matchup cancelled.');
+    }
+}
