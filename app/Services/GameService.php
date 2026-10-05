@@ -107,7 +107,11 @@ class GameService
         $result = $this->buildSmartAssignments($size, collect());
         $game = $this->assign($court, $result['assignments'], $durationMinutes);
 
-        return ['game' => $game, 'warning' => $result['warning']];
+        if ($result['warning']) {
+            $game->update(['skill_warning' => $result['warning']]);
+        }
+
+        return ['game' => $game->fresh(['gamePlayers.player', 'court', 'scores']), 'warning' => $result['warning']];
     }
 
     public function finish(Game $game, int $teamAScore, int $teamBScore): Game

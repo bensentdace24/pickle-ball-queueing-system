@@ -43,7 +43,10 @@ class MatchupController extends Controller
 
     public function start(StartMatchupRequest $request, Matchup $matchup)
     {
-        $court = Court::findOrFail($request->validated('court_id'));
+        $court = $request->validated('court_id')
+            ? Court::findOrFail($request->validated('court_id'))
+            : null;
+
         $game = $this->matchups->start($matchup, $court);
 
         return $this->success(new GameResource($game), 'Matchup started.');

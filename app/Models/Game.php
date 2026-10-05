@@ -17,6 +17,7 @@ class Game extends Model
         'started_at',
         'completed_at',
         'duration_minutes',
+        'skill_warning',
     ];
 
     protected $casts = [

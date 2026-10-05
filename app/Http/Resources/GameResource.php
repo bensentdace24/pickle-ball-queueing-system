@@ -40,6 +40,7 @@ class GameResource extends JsonResource
             'players' => PlayerResource::collection($players->map->player),
             'team_a' => $team(0),
             'team_b' => $team(1),
+            'skill_warning' => $this->skill_warning,
         ];
     }
 }

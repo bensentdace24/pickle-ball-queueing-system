@@ -8,6 +8,8 @@ use App\Models\Court;
 use App\Models\Game;
 use App\Models\Matchup;
 use App\Models\Queue;
+use App\Enums\CourtStatus;
+
 use Illuminate\Support\Facades\DB;
 
 class MatchupService
@@ -111,19 +113,34 @@ class MatchupService
         $result = $this->games->exposeSmartAssignments($size, $reservedQueueIds);
         $matchup = $this->form($result['assignments'], $durationMinutes);
 
-        return ['matchup' => $matchup, 'warning' => $result['warning']];
+        if ($result['warning']) {
+            $matchup->update(['skill_warning' => $result['warning']]);
+        }
+
+        return ['matchup' => $matchup->fresh('matchupPlayers.player'), 'warning' => $result['warning']];
     }
 
     /**
      * Send a pending matchup onto a now-available court, creating the real game.
      */
-    public function start(Matchup $matchup, Court $court): Game
+    public function start(Matchup $matchup, ?Court $court = null): Game
     {
         return DB::transaction(function () use ($matchup, $court) {
             $matchup = Matchup::whereKey($matchup->id)->lockForUpdate()->firstOrFail();
 
             if ($matchup->status !== 'pending') {
                 throw new BusinessRuleException('This matchup is no longer pending.');
+            }
+
+            if ($court === null) {
+                $court = Court::where('status', CourtStatus::Available->value)
+                    ->orderBy('id')
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($court === null) {
+                    throw new BusinessRuleException('No court is available right now.');
+                }
             }
 
             $assignments = $matchup->matchupPlayers()
@@ -134,6 +151,10 @@ class MatchupService
             $game = $this->games->assign($court, $assignments, $matchup->duration_minutes);
 
             $matchup->update(['status' => 'started', 'game_id' => $game->id]);
+
+            if ($matchup->skill_warning) {
+                $game->update(['skill_warning' => $matchup->skill_warning]);
+            }
 
             return $game;
         });

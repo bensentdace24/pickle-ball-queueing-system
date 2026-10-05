@@ -14,7 +14,7 @@ class StartMatchupRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'court_id' => ['required', 'integer', 'exists:courts,id'],
+            'court_id' => ['nullable', 'integer', 'exists:courts,id'],
         ];
     }
 }

@@ -19,6 +19,7 @@ class MatchupResource extends JsonResource
             'created_at' => $this->created_at,
             'team_a' => PlayerResource::collection($players->where('side', 0)->map->player->values()),
             'team_b' => PlayerResource::collection($players->where('side', 1)->map->player->values()),
+            'skill_warning' => $this->skill_warning,
         ];
     }
 }
