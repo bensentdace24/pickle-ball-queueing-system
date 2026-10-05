@@ -19,6 +19,7 @@ class Queue extends Model
         'status',
         'joined_at',
         'called_at',
+        'match_type',
     ];
 
     protected $casts = [

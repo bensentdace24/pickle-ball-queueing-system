@@ -40,7 +40,7 @@ class QueueController extends Controller
                 ? Player::findOrFail($data['player_id'])
                 : Player::create(Arr::only($data, ['name', 'phone', 'skill_level']));
 
-            return $this->queues->join($player);
+            return $this->queues->join($player, $data['match_type'] ?? 'any');
         });
 
         $queue->load('player');

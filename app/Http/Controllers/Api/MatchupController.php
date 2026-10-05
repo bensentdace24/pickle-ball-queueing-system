@@ -35,9 +35,10 @@ class MatchupController extends Controller
 
     public function smart(SmartFormMatchupRequest $request)
     {
-        $matchup = $this->matchups->smartForm($request->validated('match_size'), $request->validated('duration_minutes'));
+        $result = $this->matchups->smartForm($request->validated('match_size'), $request->validated('duration_minutes'));
+        $message = $result['warning'] ?? 'Balanced matchup formed.';
 
-        return $this->success(new MatchupResource($matchup), 'Balanced matchup formed.', 201);
+        return $this->success(new MatchupResource($result['matchup']), $message, 201);
     }
 
     public function start(StartMatchupRequest $request, Matchup $matchup)

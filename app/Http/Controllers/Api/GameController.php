@@ -64,12 +64,14 @@ class GameController extends Controller
     public function smartAssign(SmartAssignRequest $request)
     {
         $court = Court::findOrFail($request->validated('court_id'));
-        $game = $this->games->smartAssign(
+        $result = $this->games->smartAssign(
             $court,
             $request->validated('match_size'),
             $request->validated('duration_minutes'),
         );
 
-        return $this->success(new GameResource($game), 'Game started with balanced teams.', 201);
+        $message = $result['warning'] ?? 'Game started with balanced teams.';
+
+        return $this->success(new GameResource($result['game']), $message, 201);
     }
 }

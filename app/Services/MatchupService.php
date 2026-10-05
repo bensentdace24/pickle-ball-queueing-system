@@ -97,12 +97,8 @@ class MatchupService
      * Auto-form a balanced matchup the same way GameService::smartAssign
      * balances skill, but without picking a court yet.
      */
-    public function smartForm(int $size, ?int $durationMinutes = null): Matchup
+    public function smartForm(int $size, ?int $durationMinutes = null): array
     {
-        if (! in_array($size, [2, 4], true)) {
-            throw new BusinessRuleException('A matchup needs exactly 2 players (singles) or 4 players (doubles).');
-        }
-
         if (Matchup::pending()->count() >= self::MAX_PENDING) {
             throw new BusinessRuleException('The upcoming matchup queue is full (max 3). Start one first.');
         }
@@ -112,47 +108,10 @@ class MatchupService
             ->where('matchups.status', 'pending')
             ->pluck('matchup_players.queue_id');
 
-        $pool = Queue::with('player')
-            ->whereIn('status', [QueueStatus::Waiting->value, QueueStatus::Called->value])
-            ->whereNotIn('id', $reservedQueueIds)
-            ->orderedByJoinTime()
-            ->limit($size)
-            ->get();
+        $result = $this->games->exposeSmartAssignments($size, $reservedQueueIds);
+        $matchup = $this->form($result['assignments'], $durationMinutes);
 
-        if ($pool->count() < $size) {
-            throw new BusinessRuleException("Not enough free players in the queue for a {$size}-player matchup.");
-        }
-
-        $skillWeight = ['beginner' => 1, 'intermediate' => 2, 'advanced' => 3];
-
-        $winRates = DB::table('scores')
-            ->join('game_players', function ($join) {
-                $join->on('game_players.game_id', '=', 'scores.game_id')
-                    ->on('game_players.side', '=', 'scores.side');
-            })
-            ->whereIn('game_players.player_id', $pool->pluck('player_id'))
-            ->select(
-                'game_players.player_id',
-                DB::raw("COUNT(*) FILTER (WHERE scores.result = 'win')::float / COUNT(*) as win_rate"),
-            )
-            ->groupBy('game_players.player_id')
-            ->pluck('win_rate', 'player_id');
-
-        $ranked = $pool->sortByDesc(function ($entry) use ($skillWeight, $winRates) {
-            $skill = $skillWeight[$entry->player->skill_level] ?? 2;
-            $winRate = $winRates[$entry->player_id] ?? 0.5;
-
-            return $skill + (($winRate - 0.5) * 0.5);
-        })->values();
-
-        $assignments = [];
-        foreach ($ranked as $i => $entry) {
-            $round = intdiv($i, 2);
-            $side = ($round % 2 === 0) ? ($i % 2) : (1 - $i % 2);
-            $assignments[] = ['queue_id' => $entry->id, 'side' => $side];
-        }
-
-        return $this->form($assignments, $durationMinutes);
+        return ['matchup' => $matchup, 'warning' => $result['warning']];
     }
 
     /**

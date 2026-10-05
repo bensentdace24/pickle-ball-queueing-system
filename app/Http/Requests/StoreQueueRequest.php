@@ -18,6 +18,7 @@ class StoreQueueRequest extends FormRequest
             'name' => ['required_without:player_id', 'nullable', 'string', 'max:255'],
             'phone' => ['nullable', 'string', 'max:30'],
             'skill_level' => ['nullable', 'string', 'in:beginner,intermediate,advanced'],
+            'match_type' => ['nullable', 'in:any,singles,doubles'],
         ];
     }
 }

@@ -14,9 +14,9 @@ class QueueService
      * active (waiting/called/playing) queue entry — enforced both here
      * and by the DB's partial unique index as a safety net.
      */
-    public function join(Player $player): Queue
+    public function join(Player $player, string $matchType = 'any'): Queue
     {
-        return DB::transaction(function () use ($player) {
+        return DB::transaction(function () use ($player, $matchType) {
             $existing = $player->queueEntries()
                 ->whereIn('status', [
                     QueueStatus::Waiting->value,
@@ -26,13 +26,14 @@ class QueueService
                 ->exists();
 
             if ($existing) {
-                throw new \App\Exceptions\BusinessRuleException('Player already has an active queue entry.');
+                throw new \RuntimeException('Player already has an active queue entry.');
             }
 
             return Queue::create([
                 'player_id' => $player->id,
                 'queue_number' => DB::selectOne("SELECT nextval('queue_number_seq') AS n")->n,
                 'status' => QueueStatus::Waiting->value,
+                'match_type' => in_array($matchType, ['any', 'singles', 'doubles'], true) ? $matchType : 'any',
                 'joined_at' => now(),
             ]);
         });

@@ -102,54 +102,12 @@ class GameService
      * snake draft on skill level, with win rate as a tiebreaker once a
      * player has match history.
      */
-    public function smartAssign(Court $court, int $size, ?int $durationMinutes = null): Game
+    public function smartAssign(Court $court, int $size, ?int $durationMinutes = null): array
     {
-        if (! in_array($size, [2, 4], true)) {
-            throw new BusinessRuleException('A game requires exactly 2 players (singles) or 4 players (doubles).');
-        }
+        $result = $this->buildSmartAssignments($size, collect());
+        $game = $this->assign($court, $result['assignments'], $durationMinutes);
 
-        $pool = Queue::with('player')
-            ->whereIn('status', [QueueStatus::Waiting->value, QueueStatus::Called->value])
-            ->orderedByJoinTime()
-            ->limit($size)
-            ->get();
-
-        if ($pool->count() < $size) {
-            throw new BusinessRuleException("Not enough players in the queue for a {$size}-player game.");
-        }
-
-        $skillWeight = ['beginner' => 1, 'intermediate' => 2, 'advanced' => 3];
-
-        $winRates = DB::table('scores')
-            ->join('game_players', function ($join) {
-                $join->on('game_players.game_id', '=', 'scores.game_id')
-                    ->on('game_players.side', '=', 'scores.side');
-            })
-            ->whereIn('game_players.player_id', $pool->pluck('player_id'))
-            ->select(
-                'game_players.player_id',
-                DB::raw("COUNT(*) FILTER (WHERE scores.result = 'win')::float / COUNT(*) as win_rate"),
-            )
-            ->groupBy('game_players.player_id')
-            ->pluck('win_rate', 'player_id');
-
-        $ranked = $pool->sortByDesc(function ($entry) use ($skillWeight, $winRates) {
-            $skill = $skillWeight[$entry->player->skill_level] ?? 2; // unknown skill = assume average
-            $winRate = $winRates[$entry->player_id] ?? 0.5; // no history yet = assume average
-
-            return $skill + (($winRate - 0.5) * 0.5); // skill dominates; record nudges ties
-        })->values();
-
-        // Snake draft so the two teams end up balanced: 1st & last pick go
-        // together, the two middle picks go together.
-        $assignments = [];
-        foreach ($ranked as $i => $entry) {
-            $round = intdiv($i, 2);
-            $side = ($round % 2 === 0) ? ($i % 2) : (1 - $i % 2);
-            $assignments[] = ['queue_id' => $entry->id, 'side' => $side];
-        }
-
-        return $this->assign($court, $assignments, $durationMinutes);
+        return ['game' => $game, 'warning' => $result['warning']];
     }
 
     public function finish(Game $game, int $teamAScore, int $teamBScore): Game
@@ -202,5 +160,122 @@ class GameService
     protected function resolveQueueStatusAfterGame(): string
     {
         return QueueStatus::Completed->value;
+    }
+
+
+
+    /**
+     * @param  \Illuminate\Support\Collection<int>  $excludeQueueIds
+     * @return array{assignments: array<int, array{queue_id:int, side:int}>, warning: ?string}
+     */
+    protected function buildSmartAssignments(int $size, $excludeQueueIds): array
+    {
+        if (! in_array($size, [2, 4], true)) {
+            throw new BusinessRuleException('A game requires exactly 2 players (singles) or 4 players (doubles).');
+        }
+
+        $matchTypeKey = $size === 2 ? 'singles' : 'doubles';
+        $skillWeight = ['beginner' => 1, 'intermediate' => 2, 'advanced' => 3];
+        $skillLabel = array_flip($skillWeight);
+
+        $winRateCache = [];
+        $winRateFor = function (int $playerId) use (&$winRateCache) {
+            if (! array_key_exists($playerId, $winRateCache)) {
+                $row = DB::table('scores')
+                    ->join('game_players', function ($join) {
+                        $join->on('game_players.game_id', '=', 'scores.game_id')
+                            ->on('game_players.side', '=', 'scores.side');
+                    })
+                    ->where('game_players.player_id', $playerId)
+                    ->selectRaw("COUNT(*) FILTER (WHERE scores.result = 'win')::float / NULLIF(COUNT(*), 0) as rate")
+                    ->first();
+                $winRateCache[$playerId] = $row && $row->rate !== null ? (float) $row->rate : 0.5;
+            }
+
+            return $winRateCache[$playerId];
+        };
+
+        $scoreFor = fn($entry) => ($skillWeight[$entry->player->skill_level] ?? 2)
+            + (($winRateFor($entry->player_id) - 0.5) * 0.5);
+
+        if ($size === 2) {
+            $windowSize = 8;
+
+            $pool = Queue::with('player')
+                ->whereIn('status', [QueueStatus::Waiting->value, QueueStatus::Called->value])
+                ->whereIn('match_type', ['any', $matchTypeKey])
+                ->whereNotIn('id', $excludeQueueIds)
+                ->orderedByJoinTime()
+                ->limit($windowSize)
+                ->get();
+
+            if ($pool->count() < 2) {
+                throw new BusinessRuleException('Not enough players waiting for a singles match right now.');
+            }
+
+            $scored = $pool->values()->map(fn($entry, $i) => [
+                'entry' => $entry,
+                'tier' => $skillWeight[$entry->player->skill_level] ?? 2,
+                'position' => $i,
+            ]);
+
+            $best = null;
+            foreach ($scored as $i => $a) {
+                foreach ($scored as $j => $b) {
+                    if ($j <= $i) {
+                        continue;
+                    }
+                    $gap = abs($a['tier'] - $b['tier']);
+                    $positionSum = $a['position'] + $b['position'];
+                    if ($best === null || $gap < $best['gap'] || ($gap === $best['gap'] && $positionSum < $best['positionSum'])) {
+                        $best = ['pair' => [$a, $b], 'gap' => $gap, 'positionSum' => $positionSum];
+                    }
+                }
+            }
+
+            $warning = null;
+            if ($best['gap'] > 1) {
+                [$a, $b] = $best['pair'];
+                $tierA = $skillLabel[$a['tier']] ?? 'intermediate';
+                $tierB = $skillLabel[$b['tier']] ?? 'intermediate';
+                $warning = "Uneven skill match: {$a['entry']->player->name} ({$tierA}) vs {$b['entry']->player->name} ({$tierB}). No closer match was available.";
+            }
+
+            return [
+                'assignments' => [
+                    ['queue_id' => $best['pair'][0]['entry']->id, 'side' => 0],
+                    ['queue_id' => $best['pair'][1]['entry']->id, 'side' => 1],
+                ],
+                'warning' => $warning,
+            ];
+        }
+
+        $pool = Queue::with('player')
+            ->whereIn('status', [QueueStatus::Waiting->value, QueueStatus::Called->value])
+            ->whereIn('match_type', ['any', $matchTypeKey])
+            ->whereNotIn('id', $excludeQueueIds)
+            ->orderedByJoinTime()
+            ->limit($size)
+            ->get();
+
+        if ($pool->count() < $size) {
+            throw new BusinessRuleException("Not enough players waiting for a {$size}-player doubles game right now.");
+        }
+
+        $ranked = $pool->sortByDesc($scoreFor)->values();
+
+        $assignments = [];
+        foreach ($ranked as $i => $entry) {
+            $round = intdiv($i, 2);
+            $side = ($round % 2 === 0) ? ($i % 2) : (1 - $i % 2);
+            $assignments[] = ['queue_id' => $entry->id, 'side' => $side];
+        }
+
+        return ['assignments' => $assignments, 'warning' => null];
+    }
+
+    public function exposeSmartAssignments(int $size, $excludeQueueIds): array
+    {
+        return $this->buildSmartAssignments($size, $excludeQueueIds);
     }
 }

@@ -27,6 +27,7 @@ class QueueResource extends JsonResource
             'game' => $this->whenLoaded('gamePlayer', fn() => $this->gamePlayer?->game
                 ? new GameResource($this->gamePlayer->game)
                 : null),
+            'match_type' => $this->match_type,
         ];
     }
 }
