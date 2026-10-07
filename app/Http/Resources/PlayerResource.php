@@ -20,6 +20,7 @@ class PlayerResource extends JsonResource
             'phone' => $this->phone,
             'skill_level' => $this->skill_level,
             'created_at' => $this->created_at,
+            'qr_token' => $this->qr_token,
         ];
     }
 }

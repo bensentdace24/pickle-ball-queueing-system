@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Str;
 
 class Player extends Model
 {
@@ -14,7 +15,15 @@ class Player extends Model
         'name',
         'phone',
         'skill_level',
+        'qr_token',
     ];
+
+    protected static function booted(): void
+    {
+        static::creating(function (Player $player) {
+            $player->qr_token ??= (string) Str::uuid();
+        });
+    }
 
     public function queueEntries(): HasMany
     {
@@ -24,7 +33,7 @@ class Player extends Model
     public function activeQueueEntry()
     {
         return $this->queueEntries()
-            ->whereIn('status', ['waiting', 'called', 'playing'])
+            ->whereIn('status', ['pending', 'waiting', 'called', 'playing'])
             ->latest('joined_at')
             ->first();
     }

@@ -40,7 +40,7 @@ class QueueController extends Controller
                 ? Player::findOrFail($data['player_id'])
                 : Player::create(Arr::only($data, ['name', 'phone', 'skill_level']));
 
-            return $this->queues->join($player, $data['match_type'] ?? 'any');
+            return $this->queues->join($player, $data['match_type'] ?? 'any', false);
         });
 
         $queue->load('player');
@@ -50,6 +50,46 @@ class QueueController extends Controller
             'Joined the queue.',
             201
         );
+    }
+
+    public function selfRegister(StoreQueueRequest $request)
+    {
+        $data = $request->validated();
+
+        $queue = DB::transaction(function () use ($data) {
+            $player = isset($data['player_id'])
+                ? Player::findOrFail($data['player_id'])
+                : Player::create(Arr::only($data, ['name', 'phone', 'skill_level']));
+
+            return $this->queues->join($player, $data['match_type'] ?? 'any', true);
+        });
+
+        $queue->load('player');
+
+        return $this->success(
+            new QueueResource($queue),
+            'Registered — please see the front desk to confirm your spot.',
+            201
+        );
+    }
+
+    public function pending()
+    {
+        return $this->success(QueueResource::collection($this->queues->pendingList()));
+    }
+
+    public function approve(Queue $queue)
+    {
+        $queue = $this->queues->approve($queue);
+
+        return $this->success(new QueueResource($this->withPosition($queue)), 'Approved — added to the queue.');
+    }
+
+    public function reject(Queue $queue)
+    {
+        $queue = $this->queues->reject($queue);
+
+        return $this->success(new QueueResource($queue), 'Registration rejected.');
     }
 
     // Player-facing status: position, status, assigned court and game.

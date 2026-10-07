@@ -20,11 +20,13 @@ class Queue extends Model
         'joined_at',
         'called_at',
         'match_type',
+        'approved_at',
     ];
 
     protected $casts = [
         'joined_at' => 'datetime',
         'called_at' => 'datetime',
+        'approved_at' => 'datetime',
     ];
 
     public function player(): BelongsTo

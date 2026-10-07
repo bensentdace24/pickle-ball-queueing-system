@@ -7,6 +7,8 @@ enum QueueStatus: string
     case Waiting = 'waiting';
     case Called = 'called';
     case Playing = 'playing';
+
+    case Pending = 'pending';
     case Completed = 'completed';
     case Cancelled = 'cancelled';
 

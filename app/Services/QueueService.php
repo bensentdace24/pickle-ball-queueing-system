@@ -14,11 +14,12 @@ class QueueService
      * active (waiting/called/playing) queue entry — enforced both here
      * and by the DB's partial unique index as a safety net.
      */
-    public function join(Player $player, string $matchType = 'any'): Queue
+    public function join(Player $player, string $matchType = 'any', bool $requiresApproval = false): Queue
     {
-        return DB::transaction(function () use ($player, $matchType) {
+        return DB::transaction(function () use ($player, $matchType, $requiresApproval) {
             $existing = $player->queueEntries()
                 ->whereIn('status', [
+                    QueueStatus::Pending->value,
                     QueueStatus::Waiting->value,
                     QueueStatus::Called->value,
                     QueueStatus::Playing->value,
@@ -29,14 +30,65 @@ class QueueService
                 throw new \RuntimeException('Player already has an active queue entry.');
             }
 
+            $matchType = in_array($matchType, ['any', 'singles', 'doubles'], true) ? $matchType : 'any';
+
+            if ($requiresApproval) {
+                return Queue::create([
+                    'player_id' => $player->id,
+                    'queue_number' => null,
+                    'status' => QueueStatus::Pending->value,
+                    'match_type' => $matchType,
+                    'joined_at' => now(),
+                ]);
+            }
+
             return Queue::create([
                 'player_id' => $player->id,
                 'queue_number' => DB::selectOne("SELECT nextval('queue_number_seq') AS n")->n,
                 'status' => QueueStatus::Waiting->value,
-                'match_type' => in_array($matchType, ['any', 'singles', 'doubles'], true) ? $matchType : 'any',
+                'match_type' => $matchType,
                 'joined_at' => now(),
             ]);
         });
+    }
+
+    public function pendingList()
+    {
+        return Queue::with('player')
+            ->where('status', QueueStatus::Pending->value)
+            ->oldest('joined_at')
+            ->get();
+    }
+
+    public function approve(Queue $queue): Queue
+    {
+        return DB::transaction(function () use ($queue) {
+            $queue = Queue::whereKey($queue->id)->lockForUpdate()->firstOrFail();
+
+            if ($queue->status !== QueueStatus::Pending->value) {
+                throw new \RuntimeException('Only a pending registration can be approved.');
+            }
+
+            $queue->update([
+                'status' => QueueStatus::Waiting->value,
+                'queue_number' => DB::selectOne("SELECT nextval('queue_number_seq') AS n")->n,
+                'joined_at' => now(), // fairness resets to the moment they're actually in line
+                'approved_at' => now(),
+            ]);
+
+            return $queue->load('player');
+        });
+    }
+
+    public function reject(Queue $queue): Queue
+    {
+        if ($queue->status !== QueueStatus::Pending->value) {
+            throw new \RuntimeException('Only a pending registration can be rejected.');
+        }
+
+        $queue->update(['status' => QueueStatus::Cancelled->value]);
+
+        return $queue->load('player');
     }
 
     /**
