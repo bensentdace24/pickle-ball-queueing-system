@@ -7,6 +7,7 @@ use App\Http\Resources\MatchupResource;
 use App\Http\Resources\PlayerResource;
 use App\Http\Resources\QueueResource;
 use App\Http\Traits\ApiResponse;
+use App\Models\Matchup;
 use App\Models\Player;
 use App\Models\Queue;
 use Illuminate\Support\Facades\DB;
@@ -23,14 +24,15 @@ class PlayerStatusController extends Controller
             return $this->success(null, 'Player not found.', 404);
         }
 
+        $record = $this->record($player);
         $entry = $player->activeQueueEntry();
 
         if (! $entry) {
-            return $this->success([
+            return $this->success(array_merge([
                 'player' => new PlayerResource($player),
                 'queue' => null,
                 'matchup' => null,
-            ]);
+            ], $record));
         }
 
         $position = null;
@@ -57,17 +59,84 @@ class PlayerStatusController extends Controller
             ->value('matchup_players.matchup_id');
 
         if ($pendingMatchupId) {
-            $pendingIds = \App\Models\Matchup::pending()->pluck('id')->values();
-            $position = $pendingIds->search($pendingMatchupId);
-            $matchupModel = \App\Models\Matchup::with('matchupPlayers.player')->find($pendingMatchupId);
+            $pendingIds = Matchup::pending()->pluck('id')->values();
+            $matchupPosition = $pendingIds->search($pendingMatchupId);
+            $matchupModel = Matchup::with('matchupPlayers.player')->find($pendingMatchupId);
             $matchup = (new MatchupResource($matchupModel))->resolve();
-            $matchup['position'] = $position !== false ? $position + 1 : null;
+            $matchup['position'] = $matchupPosition !== false ? $matchupPosition + 1 : null;
         }
 
-        return $this->success([
+        return $this->success(array_merge([
             'player' => new PlayerResource($player),
             'queue' => new QueueResource($entry),
             'matchup' => $matchup,
-        ]);
+        ], $record));
+    }
+
+    private function record(Player $player): array
+    {
+        $stats = DB::table('scores')
+            ->join('game_players', function ($join) {
+                $join->on('game_players.game_id', '=', 'scores.game_id')
+                    ->on('game_players.side', '=', 'scores.side');
+            })
+            ->join('games', 'games.id', '=', 'scores.game_id')
+            ->where('game_players.player_id', $player->id)
+            ->where('games.status', 'completed')
+            ->selectRaw("
+                COUNT(*) as games_played,
+                COUNT(*) FILTER (WHERE scores.result = 'win') as wins,
+                COUNT(*) FILTER (WHERE scores.result = 'loss') as losses,
+                COUNT(*) FILTER (WHERE scores.result = 'draw') as draws,
+                COALESCE(SUM(scores.points), 0) as total_points,
+                AVG(EXTRACT(EPOCH FROM (games.completed_at - games.started_at))) as avg_seconds
+            ")
+            ->first();
+
+        $recent = DB::table('game_players')
+            ->join('games', 'games.id', '=', 'game_players.game_id')
+            ->join('courts', 'courts.id', '=', 'games.court_id')
+            ->join('scores as mine', function ($join) {
+                $join->on('mine.game_id', '=', 'game_players.game_id')
+                    ->on('mine.side', '=', 'game_players.side');
+            })
+            ->join('scores as theirs', function ($join) {
+                $join->on('theirs.game_id', '=', 'game_players.game_id')
+                    ->on('theirs.side', '!=', 'game_players.side');
+            })
+            ->where('game_players.player_id', $player->id)
+            ->where('games.status', 'completed')
+            ->orderByDesc('games.completed_at')
+            ->limit(5)
+            ->select(
+                'games.id as game_id',
+                'courts.name as court',
+                'games.completed_at',
+                'mine.points as my_points',
+                'theirs.points as their_points',
+                'mine.result as result',
+                DB::raw('EXTRACT(EPOCH FROM (games.completed_at - games.started_at)) as duration_seconds'),
+            )
+            ->get();
+
+        return [
+            'stats' => [
+                'games_played' => (int) $stats->games_played,
+                'wins' => (int) $stats->wins,
+                'losses' => (int) $stats->losses,
+                'draws' => (int) $stats->draws,
+                'total_points' => (int) $stats->total_points,
+                'avg_seconds' => $stats->avg_seconds !== null ? (int) round($stats->avg_seconds) : null,
+            ],
+            'recent_games' => $recent->map(fn($g) => [
+                'game_id' => (int) $g->game_id,
+                'court' => $g->court,
+                'completed_at' => $g->completed_at,
+                'my_points' => (int) $g->my_points,
+                'their_points' => (int) $g->their_points,
+                'result' => $g->result,
+                'duration_seconds' => $g->duration_seconds !== null ? (int) round($g->duration_seconds) : null,
+            ])->all(),
+        ];
     }
 }
