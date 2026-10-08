@@ -12,16 +12,20 @@ use App\Http\Traits\ApiResponse;
 use App\Models\Court;
 use App\Models\Matchup;
 use App\Services\MatchupService;
+use App\Services\WaitEstimator;
 
 class MatchupController extends Controller
 {
     use ApiResponse;
 
-    public function __construct(private MatchupService $matchups) {}
+    public function __construct(private MatchupService $matchups, private WaitEstimator $estimator) {}
 
     public function index()
     {
         $pending = Matchup::with('matchupPlayers.player')->pending()->get();
+
+        $estimates = $this->estimator->build();
+        $pending->each(fn($m) => $m->setAttribute('estimated_minutes', $estimates['matchups'][$m->id] ?? null));
 
         return $this->success(MatchupResource::collection($pending));
     }

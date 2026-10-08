@@ -28,6 +28,8 @@ class QueueResource extends JsonResource
                 ? new GameResource($this->gamePlayer->game)
                 : null),
             'match_type' => $this->match_type,
+            'estimated_minutes' => $this->getAttribute('estimated_minutes'),
+
         ];
     }
 }

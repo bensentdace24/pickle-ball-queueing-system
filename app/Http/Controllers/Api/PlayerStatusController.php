@@ -11,10 +11,13 @@ use App\Models\Matchup;
 use App\Models\Player;
 use App\Models\Queue;
 use Illuminate\Support\Facades\DB;
+use App\Services\WaitEstimator;
 
 class PlayerStatusController extends Controller
 {
     use ApiResponse;
+
+    public function __construct(private WaitEstimator $estimator) {}
 
     public function show(string $token)
     {
@@ -48,6 +51,11 @@ class PlayerStatusController extends Controller
                 ->count() + 1;
         }
         $entry->setAttribute('position', $position);
+        $estimates = null;
+        if (in_array($entry->status, ['waiting', 'called'], true)) {
+            $estimates = $this->estimator->build();
+            $entry->setAttribute('estimated_minutes', $estimates['queue'][$entry->id] ?? null);
+        }
 
         $entry->load('player', 'gamePlayer.game.court', 'gamePlayer.game.gamePlayers.player', 'gamePlayer.game.scores');
 
@@ -64,6 +72,7 @@ class PlayerStatusController extends Controller
             $matchupModel = Matchup::with('matchupPlayers.player')->find($pendingMatchupId);
             $matchup = (new MatchupResource($matchupModel))->resolve();
             $matchup['position'] = $matchupPosition !== false ? $matchupPosition + 1 : null;
+            $matchup['estimated_minutes'] = $estimates['matchups'][$pendingMatchupId] ?? null;
         }
 
         return $this->success(array_merge([
