@@ -60,6 +60,7 @@ class GameController extends Controller
             $game,
             $request->validated('team_a_score'),
             $request->validated('team_b_score'),
+            array_map('intval', $request->validated('requeue_player_ids') ?? []),
         );
 
         return $this->success(new GameResource($game), 'Game finished.');

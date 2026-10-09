@@ -114,9 +114,9 @@ class GameService
         return ['game' => $game->fresh(['gamePlayers.player', 'court', 'scores']), 'warning' => $result['warning']];
     }
 
-    public function finish(Game $game, int $teamAScore, int $teamBScore): Game
+    public function finish(Game $game, int $teamAScore, int $teamBScore, array $requeuePlayerIds = []): Game
     {
-        return DB::transaction(function () use ($game, $teamAScore, $teamBScore) {
+        return DB::transaction(function () use ($game, $teamAScore, $teamBScore, $requeuePlayerIds) {
             $game = Game::whereKey($game->id)->lockForUpdate()->firstOrFail();
 
             if ($game->status !== GameStatus::Playing->value) {
@@ -150,8 +150,15 @@ class GameService
 
             foreach ($game->gamePlayers as $gamePlayer) {
                 $queueEntry = $gamePlayer->queueEntry;
-                if ($queueEntry) {
-                    $queueEntry->update(['status' => $this->resolveQueueStatusAfterGame()]);
+
+                if (! $queueEntry) {
+                    continue;
+                }
+
+                $queueEntry->update(['status' => $this->resolveQueueStatusAfterGame()]);
+
+                if (in_array($gamePlayer->player_id, $requeuePlayerIds, true)) {
+                    $this->requeue($queueEntry);
                 }
             }
 
@@ -164,6 +171,20 @@ class GameService
     protected function resolveQueueStatusAfterGame(): string
     {
         return QueueStatus::Completed->value;
+    }
+    /**
+     * Puts a player back at the end of the line after a game. The old entry is
+     * already closed by this point, so the one-active-entry-per-player rule holds.
+     */
+    protected function requeue(Queue $old): Queue
+    {
+        return Queue::create([
+            'player_id' => $old->player_id,
+            'queue_number' => DB::selectOne("SELECT nextval('queue_number_seq') AS n")->n,
+            'status' => QueueStatus::Waiting->value,
+            'match_type' => $old->match_type,
+            'joined_at' => now(),
+        ]);
     }
 
 

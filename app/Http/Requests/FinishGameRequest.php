@@ -16,6 +16,8 @@ class FinishGameRequest extends FormRequest
         return [
             'team_a_score' => ['required', 'integer', 'min:0'],
             'team_b_score' => ['required', 'integer', 'min:0'],
+            'requeue_player_ids' => ['nullable', 'array'],
+            'requeue_player_ids.*' => ['integer', 'distinct'],
         ];
     }
 }
