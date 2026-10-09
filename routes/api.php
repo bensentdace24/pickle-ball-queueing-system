@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\QueueController;
 use App\Http\Controllers\Api\RankingController;
 use App\Http\Controllers\Api\MatchupController;
 use App\Http\Controllers\Api\PlayerStatusController;
+use App\Http\Controllers\Api\AnalyticsController;
 
 use Illuminate\Support\Facades\Route;
 
@@ -39,6 +40,7 @@ Route::get('rankings', [RankingController::class, 'index']);
 
 
 
+
 Route::post('games/smart-assign', [GameController::class, 'smartAssign']);
 
 //matchups
@@ -50,3 +52,6 @@ Route::post('matchups/{matchup}/cancel', [MatchupController::class, 'cancel']);
 
 
 Route::get('status/{token}', [PlayerStatusController::class, 'show']);
+
+//analytics
+Route::get('analytics', [AnalyticsController::class, 'index']);

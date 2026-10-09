@@ -25,12 +25,16 @@ class GameController extends Controller
         $status = $request->query('status', 'playing');
         $allowed = ['playing', 'completed', 'cancelled', 'all'];
         $status = in_array($status, $allowed, true) ? $status : 'playing';
-
+        $limit = min(200, max(1, (int) $request->query('limit', 50)));
 
         $games = Game::with('court', 'gamePlayers.player', 'scores')
             ->when($status !== 'all', fn($q) => $q->where('status', $status))
-            ->orderByDesc('started_at')
-            ->limit(50)
+            ->when($request->query('player'), fn($q, $name) => $q->whereHas(
+                'gamePlayers.player',
+                fn($p) => $p->where('name', 'ilike', "%{$name}%")
+            ))
+            ->orderByDesc($status === 'completed' ? 'completed_at' : 'started_at')
+            ->limit($limit)
             ->get();
 
         return $this->success(GameResource::collection($games));
