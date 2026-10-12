@@ -20,7 +20,10 @@ class PlayerResource extends JsonResource
             'phone' => $this->phone,
             'skill_level' => $this->skill_level,
             'created_at' => $this->created_at,
-            'qr_token' => $this->qr_token,
+            'qr_token' => $this->when(
+                $this->resource->exposeQrToken || $request->user('sanctum') !== null,
+                fn() => $this->qr_token
+            ),
         ];
     }
 }

@@ -11,9 +11,11 @@ use App\Http\Traits\ApiResponse;
 use App\Models\Player;
 use App\Models\Queue;
 use App\Services\QueueService;
+use App\Http\Requests\SelfRegisterRequest;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
+
 
 class QueueController extends Controller
 {
@@ -52,19 +54,18 @@ class QueueController extends Controller
         );
     }
 
-    public function selfRegister(StoreQueueRequest $request)
+    public function selfRegister(SelfRegisterRequest $request)
     {
         $data = $request->validated();
 
         $queue = DB::transaction(function () use ($data) {
-            $player = isset($data['player_id'])
-                ? Player::findOrFail($data['player_id'])
-                : Player::create(Arr::only($data, ['name', 'phone', 'skill_level']));
+            $player = Player::create(Arr::only($data, ['name', 'phone', 'skill_level']));
 
             return $this->queues->join($player, $data['match_type'] ?? 'any', true);
         });
 
         $queue->load('player');
+        $queue->player->exposeQrToken = true; // the registrant needs their own token to be redirected
 
         return $this->success(
             new QueueResource($queue),
@@ -72,7 +73,6 @@ class QueueController extends Controller
             201
         );
     }
-
     public function pending()
     {
         $entries = $this->queues->pendingList();

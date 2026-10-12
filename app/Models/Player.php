@@ -18,6 +18,8 @@ class Player extends Model
         'qr_token',
     ];
 
+    public bool $exposeQrToken = false;
+
     protected static function booted(): void
     {
         static::creating(function (Player $player) {
