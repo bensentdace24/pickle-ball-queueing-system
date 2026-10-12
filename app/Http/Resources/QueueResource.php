@@ -29,6 +29,7 @@ class QueueResource extends JsonResource
                 : null),
             'match_type' => $this->match_type,
             'estimated_minutes' => $this->getAttribute('estimated_minutes'),
+            'possible_matches' => $this->getAttribute('possible_matches'),
 
         ];
     }

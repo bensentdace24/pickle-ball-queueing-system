@@ -75,7 +75,21 @@ class QueueController extends Controller
 
     public function pending()
     {
-        return $this->success(QueueResource::collection($this->queues->pendingList()));
+        $entries = $this->queues->pendingList();
+        $this->queues->attachPossibleMatches($entries);
+
+        return $this->success(QueueResource::collection($entries));
+    }
+
+    public function linkPlayer(Request $request, Queue $queue)
+    {
+        $data = $request->validate([
+            'player_id' => ['required', 'integer', 'exists:players,id'],
+        ]);
+
+        $queue = $this->queues->linkToPlayer($queue, Player::findOrFail($data['player_id']));
+
+        return $this->success(new QueueResource($queue), 'Linked to the existing player.');
     }
 
     public function approve(Queue $queue)

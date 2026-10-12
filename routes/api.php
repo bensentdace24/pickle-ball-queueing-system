@@ -30,6 +30,7 @@ Route::get('queue/{queue}', [QueueController::class, 'show']);
 Route::post('queue/{queue}/cancel', [QueueController::class, 'cancel']);
 Route::post('queue/{queue}/approve', [QueueController::class, 'approve']);
 Route::post('queue/{queue}/reject', [QueueController::class, 'reject']);
+Route::post('queue/{queue}/link-player', [QueueController::class, 'linkPlayer']);
 
 Route::get('games', [GameController::class, 'index']);
 Route::post('games', [GameController::class, 'store']);
@@ -49,6 +50,7 @@ Route::post('matchups', [MatchupController::class, 'store']);
 Route::post('matchups/smart', [MatchupController::class, 'smart']);
 Route::post('matchups/{matchup}/start', [MatchupController::class, 'start']);
 Route::post('matchups/{matchup}/cancel', [MatchupController::class, 'cancel']);
+
 
 
 Route::get('status/{token}', [PlayerStatusController::class, 'show']);

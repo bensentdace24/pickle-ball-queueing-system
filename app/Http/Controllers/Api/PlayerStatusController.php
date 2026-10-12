@@ -24,7 +24,7 @@ class PlayerStatusController extends Controller
         $player = Player::where('qr_token', $token)->first();
 
         if (! $player) {
-            return $this->success(null, 'Player not found.', 404);
+            return $this->success(null, 'This link is no longer valid. Please ask the front desk for your QR code.', 404);
         }
 
         $record = $this->record($player);
