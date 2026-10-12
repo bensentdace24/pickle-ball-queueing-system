@@ -27,7 +27,7 @@ class QueueService
                 ->exists();
 
             if ($existing) {
-                throw new \RuntimeException('Player already has an active queue entry.');
+                throw new \App\Exceptions\BusinessRuleException('Player already has an active queue entry.');
             }
 
             $matchType = in_array($matchType, ['any', 'singles', 'doubles'], true) ? $matchType : 'any';
@@ -66,7 +66,7 @@ class QueueService
             $queue = Queue::whereKey($queue->id)->lockForUpdate()->firstOrFail();
 
             if ($queue->status !== QueueStatus::Pending->value) {
-                throw new \RuntimeException('Only a pending registration can be approved.');
+                throw new \App\Exceptions\BusinessRuleException('Only a pending registration can be approved.');
             }
 
             $queue->update([
@@ -83,7 +83,7 @@ class QueueService
     public function reject(Queue $queue): Queue
     {
         if ($queue->status !== QueueStatus::Pending->value) {
-            throw new \RuntimeException('Only a pending registration can be rejected.');
+            throw new \App\Exceptions\BusinessRuleException('Only a pending registration can be rejected.');
         }
 
         $queue->update(['status' => QueueStatus::Cancelled->value]);
