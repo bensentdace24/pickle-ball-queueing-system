@@ -12,12 +12,19 @@ use App\Models\Player;
 use App\Models\Queue;
 use Illuminate\Support\Facades\DB;
 use App\Services\WaitEstimator;
+use App\Exceptions\BusinessRuleException;
+use App\Services\MatchupService;
+use App\Services\QueueService;
 
 class PlayerStatusController extends Controller
 {
     use ApiResponse;
 
-    public function __construct(private WaitEstimator $estimator) {}
+    public function __construct(
+        private WaitEstimator $estimator,
+        private QueueService $queues,
+        private MatchupService $matchups,
+    ) {}
 
     public function show(string $token)
     {
@@ -147,5 +154,34 @@ class PlayerStatusController extends Controller
                 'duration_seconds' => $g->duration_seconds !== null ? (int) round($g->duration_seconds) : null,
             ])->all(),
         ];
+    }
+
+    public function cancel(string $token)
+    {
+        $player = Player::where('qr_token', $token)->firstOrFail();
+
+        DB::transaction(function () use ($player) {
+            $entry = $player->activeQueueEntry();
+
+            if (! $entry || ! in_array($entry->status, ['pending', 'waiting', 'called'], true)) {
+                throw new BusinessRuleException('There is nothing to cancel right now.');
+            }
+
+            $matchupId = DB::table('matchup_players')
+                ->join('matchups', 'matchups.id', '=', 'matchup_players.matchup_id')
+                ->where('matchup_players.queue_id', $entry->id)
+                ->where('matchups.status', 'pending')
+                ->value('matchup_players.matchup_id');
+
+            if ($matchupId) {
+                // Breaks up the Up Next match; everyone in it goes back to Waiting.
+                $this->matchups->cancel(Matchup::findOrFail($matchupId));
+                $entry->refresh();
+            }
+
+            $this->queues->cancel($entry);
+        });
+
+        return $this->success(null, 'Your spot was cancelled.');
     }
 }

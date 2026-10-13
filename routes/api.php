@@ -12,9 +12,10 @@ use App\Http\Controllers\Api\RankingController;
 use Illuminate\Support\Facades\Route;
 
 // Public: login, player self-registration, and the QR status page
-Route::post('auth/login', [AuthController::class, 'login'])->middleware('throttle:10,1');
-Route::post('queue/self-register', [QueueController::class, 'selfRegister'])->middleware('throttle:20,1');
-Route::get('status/{token}', [PlayerStatusController::class, 'show'])->middleware('throttle:120,1');
+Route::post('auth/login', [AuthController::class, 'login'])->middleware('throttle:10,1,login');
+Route::post('queue/self-register', [QueueController::class, 'selfRegister'])->middleware('throttle:20,1,register');
+Route::get('status/{token}', [PlayerStatusController::class, 'show'])->middleware('throttle:120,1,status');
+Route::post('status/{token}/cancel', [PlayerStatusController::class, 'cancel'])->middleware('throttle:20,1,cancel');
 
 // Staff only
 Route::middleware('auth:sanctum')->group(function () {
