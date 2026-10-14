@@ -147,6 +147,7 @@ class GameService
             ]);
 
             $game->load('gamePlayers.queueEntry');
+            app(\App\Services\RankService::class)->applyGame($game);
 
             foreach ($game->gamePlayers as $gamePlayer) {
                 $queueEntry = $gamePlayer->queueEntry;

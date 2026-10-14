@@ -6,8 +6,10 @@ use Illuminate\Support\Facades\DB;
 
 class RankingService
 {
+    public function __construct(private RankService $ranks) {}
+
     /**
-     * Ranked by wins, then total points, then faster average game time.
+     * Leaderboard order: wins, then total points, then faster average game time.
      */
     public function all(): array
     {
@@ -22,6 +24,7 @@ class RankingService
             ->select(
                 'players.id as player_id',
                 'players.name',
+                'players.rank_points',
                 DB::raw('SUM(scores.points) as total_points'),
                 DB::raw("COUNT(*) FILTER (WHERE scores.result = 'win') as wins"),
                 DB::raw("COUNT(*) FILTER (WHERE scores.result = 'loss') as losses"),
@@ -29,7 +32,7 @@ class RankingService
                 DB::raw('COUNT(*) as games_played'),
                 DB::raw('AVG(EXTRACT(EPOCH FROM (games.completed_at - games.started_at))) as avg_seconds'),
             )
-            ->groupBy('players.id', 'players.name')
+            ->groupBy('players.id', 'players.name', 'players.rank_points')
             ->orderByDesc('wins')
             ->orderByDesc('total_points')
             ->orderBy('avg_seconds')
@@ -45,13 +48,15 @@ class RankingService
                 'rank' => $i + 1,
                 'player_id' => $row->player_id,
                 'name' => $row->name,
+                'tier' => $this->ranks->summary((int) $row->rank_points)['tier'],
+                'rank_points' => (int) $row->rank_points,
                 'total_points' => (int) $row->total_points,
                 'wins' => $wins,
                 'losses' => (int) $row->losses,
                 'draws' => (int) $row->draws,
                 'games_played' => $games,
                 'win_rate' => $games > 0 ? round($wins / $games * 100, 1) : 0,
-                'top_percent' => (int) ceil((($i + 1) / $total) * 100), // rank 1 of 10 = top 10%
+                'top_percent' => (int) ceil((($i + 1) / $total) * 100),
                 'avg_seconds' => $row->avg_seconds !== null ? (int) round($row->avg_seconds) : null,
             ];
         })->all();

@@ -15,6 +15,8 @@ use App\Services\WaitEstimator;
 use App\Exceptions\BusinessRuleException;
 use App\Services\MatchupService;
 use App\Services\QueueService;
+use App\Models\RankEvent;
+use App\Services\RankService;
 
 class PlayerStatusController extends Controller
 {
@@ -135,6 +137,10 @@ class PlayerStatusController extends Controller
             )
             ->get();
 
+        $changes = RankEvent::where('player_id', $player->id)
+            ->whereIn('game_id', $recent->pluck('game_id'))
+            ->pluck('delta', 'game_id');
+
         return [
             'stats' => [
                 'games_played' => (int) $stats->games_played,
@@ -144,6 +150,7 @@ class PlayerStatusController extends Controller
                 'total_points' => (int) $stats->total_points,
                 'avg_seconds' => $stats->avg_seconds !== null ? (int) round($stats->avg_seconds) : null,
             ],
+            'rank' => app(RankService::class)->summary((int) $player->rank_points),
             'recent_games' => $recent->map(fn($g) => [
                 'game_id' => (int) $g->game_id,
                 'court' => $g->court,
@@ -152,6 +159,7 @@ class PlayerStatusController extends Controller
                 'their_points' => (int) $g->their_points,
                 'result' => $g->result,
                 'duration_seconds' => $g->duration_seconds !== null ? (int) round($g->duration_seconds) : null,
+                'rank_change' => isset($changes[$g->game_id]) ? (int) $changes[$g->game_id] : null,
             ])->all(),
         ];
     }

@@ -16,6 +16,7 @@ class Player extends Model
         'phone',
         'skill_level',
         'qr_token',
+        'rank_points',
     ];
 
     public bool $exposeQrToken = false;
