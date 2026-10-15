@@ -26,7 +26,7 @@ return [
     'min_game_seconds' => 0,
 
     // Smart matching: how many games before rank points fully replace the skill-label estimate
-    'trust_after_games' => 1,
+    'trust_after_games' => 10,
 
     // Singles: warn staff when two players are further apart than this many rank points
     'singles_max_gap' => 300,

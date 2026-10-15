@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Matchup extends Model
 {
-    protected $fillable = ['match_size', 'duration_minutes', 'status', 'game_id'];
+    protected $fillable = ['match_size', 'duration_minutes', 'skill_warning', 'status', 'game_id'];
 
     public function matchupPlayers(): HasMany
     {
