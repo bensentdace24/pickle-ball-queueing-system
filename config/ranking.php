@@ -24,4 +24,10 @@ return [
     // Games shorter than this don't count. Keep 0 while testing and raise it
     // (for example 180) at go-live so staff can't farm points with instant fake scores.
     'min_game_seconds' => 0,
+
+    // Smart matching: how many games before rank points fully replace the skill-label estimate
+    'trust_after_games' => 1,
+
+    // Singles: warn staff when two players are further apart than this many rank points
+    'singles_max_gap' => 300,
 ];

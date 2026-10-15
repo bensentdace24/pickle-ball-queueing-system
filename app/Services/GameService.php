@@ -201,94 +201,88 @@ class GameService
         }
 
         $matchTypeKey = $size === 2 ? 'singles' : 'doubles';
-        $skillWeight = ['beginner' => 1, 'intermediate' => 2, 'advanced' => 3];
-        $skillLabel = array_flip($skillWeight);
+        $ranks = app(RankService::class);
 
-        $winRateCache = [];
-        $winRateFor = function (int $playerId) use (&$winRateCache) {
-            if (! array_key_exists($playerId, $winRateCache)) {
-                $row = DB::table('scores')
-                    ->join('game_players', function ($join) {
-                        $join->on('game_players.game_id', '=', 'scores.game_id')
-                            ->on('game_players.side', '=', 'scores.side');
-                    })
-                    ->where('game_players.player_id', $playerId)
-                    ->selectRaw("COUNT(*) FILTER (WHERE scores.result = 'win')::float / NULLIF(COUNT(*), 0) as rate")
-                    ->first();
-                $winRateCache[$playerId] = $row && $row->rate !== null ? (float) $row->rate : 0.5;
-            }
-
-            return $winRateCache[$playerId];
-        };
-
-        $scoreFor = fn($entry) => ($skillWeight[$entry->player->skill_level] ?? 2)
-            + (($winRateFor($entry->player_id) - 0.5) * 0.5);
-
-        if ($size === 2) {
-            $windowSize = 8;
-
-            $pool = Queue::with('player')
-                ->whereIn('status', [QueueStatus::Waiting->value, QueueStatus::Called->value])
-                ->whereIn('match_type', ['any', $matchTypeKey])
-                ->whereNotIn('id', $excludeQueueIds)
-                ->orderedByJoinTime()
-                ->limit($windowSize)
-                ->get();
-
-            if ($pool->count() < 2) {
-                throw new BusinessRuleException('Not enough players waiting for a singles match right now.');
-            }
-
-            $scored = $pool->values()->map(fn($entry, $i) => [
-                'entry' => $entry,
-                'tier' => $skillWeight[$entry->player->skill_level] ?? 2,
-                'position' => $i,
-            ]);
-
-            $best = null;
-            foreach ($scored as $i => $a) {
-                foreach ($scored as $j => $b) {
-                    if ($j <= $i) {
-                        continue;
-                    }
-                    $gap = abs($a['tier'] - $b['tier']);
-                    $positionSum = $a['position'] + $b['position'];
-                    if ($best === null || $gap < $best['gap'] || ($gap === $best['gap'] && $positionSum < $best['positionSum'])) {
-                        $best = ['pair' => [$a, $b], 'gap' => $gap, 'positionSum' => $positionSum];
-                    }
-                }
-            }
-
-            $warning = null;
-            if ($best['gap'] > 1) {
-                [$a, $b] = $best['pair'];
-                $tierA = $skillLabel[$a['tier']] ?? 'intermediate';
-                $tierB = $skillLabel[$b['tier']] ?? 'intermediate';
-                $warning = "Uneven skill match: {$a['entry']->player->name} ({$tierA}) vs {$b['entry']->player->name} ({$tierB}). No closer match was available.";
-            }
-
-            return [
-                'assignments' => [
-                    ['queue_id' => $best['pair'][0]['entry']->id, 'side' => 0],
-                    ['queue_id' => $best['pair'][1]['entry']->id, 'side' => 1],
-                ],
-                'warning' => $warning,
-            ];
-        }
+        // Singles looks a bit further down the line to find a fair opponent;
+        // doubles takes the longest-waiting 4.
+        $window = $size === 2 ? 8 : 4;
 
         $pool = Queue::with('player')
             ->whereIn('status', [QueueStatus::Waiting->value, QueueStatus::Called->value])
             ->whereIn('match_type', ['any', $matchTypeKey])
             ->whereNotIn('id', $excludeQueueIds)
             ->orderedByJoinTime()
-            ->limit($size)
+            ->limit($window)
             ->get();
 
         if ($pool->count() < $size) {
-            throw new BusinessRuleException("Not enough players waiting for a {$size}-player doubles game right now.");
+            throw new BusinessRuleException(
+                $size === 2
+                    ? 'Not enough players waiting for a singles match right now.'
+                    : 'Not enough players waiting for a doubles game right now.'
+            );
         }
 
-        $ranked = $pool->sortByDesc($scoreFor)->values();
+        $gamesPlayed = DB::table('game_players')
+            ->join('games', 'games.id', '=', 'game_players.game_id')
+            ->where('games.status', 'completed')
+            ->whereIn('game_players.player_id', $pool->pluck('player_id'))
+            ->groupBy('game_players.player_id')
+            ->selectRaw('game_players.player_id, COUNT(*) as n')
+            ->pluck('n', 'player_id');
+
+        $seeds = ['beginner' => 0, 'intermediate' => 250, 'advanced' => 450];
+        $defaultSeed = 100;
+        $trustAfter = max(1, (int) config('ranking.trust_after_games'));
+
+        // Strength on the rank-point scale: skill label at first, real rank points later
+        $strength = [];
+        foreach ($pool as $entry) {
+            $player = $entry->player;
+            $seed = $seeds[$player->skill_level] ?? $defaultSeed;
+            $weight = min(1, ((int) ($gamesPlayed[$player->id] ?? 0)) / $trustAfter);
+            $strength[$entry->id] = ($seed * (1 - $weight)) + ((int) $player->rank_points * $weight);
+        }
+
+        if ($size === 2) {
+            $items = $pool->values();
+            $best = null;
+
+            foreach ($items as $i => $a) {
+                foreach ($items as $j => $b) {
+                    if ($j <= $i) {
+                        continue;
+                    }
+
+                    $gap = (int) round(abs($strength[$a->id] - $strength[$b->id]));
+                    $positionSum = $i + $j; // on a tie, favor whoever has waited longer
+
+                    if ($best === null || $gap < $best['gap'] || ($gap === $best['gap'] && $positionSum < $best['positionSum'])) {
+                        $best = ['pair' => [$a, $b], 'gap' => $gap, 'positionSum' => $positionSum];
+                    }
+                }
+            }
+
+            [$a, $b] = $best['pair'];
+
+            $warning = null;
+            if ($best['gap'] > (int) config('ranking.singles_max_gap')) {
+                $tierA = $ranks->summary((int) round($strength[$a->id]))['tier'];
+                $tierB = $ranks->summary((int) round($strength[$b->id]))['tier'];
+                $warning = "Uneven match: {$a->player->name} ({$tierA}) vs {$b->player->name} ({$tierB}). No closer match was available.";
+            }
+
+            return [
+                'assignments' => [
+                    ['queue_id' => $a->id, 'side' => 0],
+                    ['queue_id' => $b->id, 'side' => 1],
+                ],
+                'warning' => $warning,
+            ];
+        }
+
+        // Doubles: strongest + weakest on one team, the middle two on the other
+        $ranked = $pool->sortByDesc(fn($entry) => $strength[$entry->id])->values();
 
         $assignments = [];
         foreach ($ranked as $i => $entry) {
