@@ -2,6 +2,7 @@
 
 use Illuminate\Support\Facades\Route;
 
-Route::get('/', function () {
-    return view('welcome');
-});
+// Serves the built React app for every page that isn't an API call
+Route::get('/{any?}', function () {
+    return response()->file(public_path('index.html'));
+})->where('any', '^(?!api/).*$');
