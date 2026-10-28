@@ -7,6 +7,7 @@ use App\Enums\GameStatus;
 use App\Enums\QueueStatus;
 use App\Enums\ScoreResult;
 use App\Exceptions\BusinessRuleException;
+use App\Http\Requests\FinishGameRequest;
 use App\Models\Court;
 use App\Models\Game;
 use App\Models\Queue;
@@ -123,50 +124,91 @@ class GameService
                 throw new BusinessRuleException('Game is not currently active.');
             }
 
-            $game->update([
-                'status' => GameStatus::Completed->value,
-                'completed_at' => now(),
-            ]);
+            return $this->completeGame($game, $teamAScore, $teamBScore, $requeuePlayerIds);
+        });
+    }
 
-            $resultFor = fn(int $mine, int $theirs) => $mine > $theirs
-                ? ScoreResult::Win->value
-                : ($mine < $theirs ? ScoreResult::Loss->value : ScoreResult::Draw->value);
+    public function adjustScore(Game $game, int $side, int $change): Game
+    {
+        if (! in_array($side, [0, 1], true) || ! in_array($change, [-1, 1], true)) {
+            throw new BusinessRuleException('Choose a team and add or remove one point.');
+        }
 
-            Score::create([
-                'game_id' => $game->id,
-                'side' => 0,
-                'points' => $teamAScore,
-                'result' => $resultFor($teamAScore, $teamBScore),
-            ]);
+        return DB::transaction(function () use ($game, $side, $change) {
+            $game = Game::whereKey($game->id)->lockForUpdate()->firstOrFail();
 
-            Score::create([
-                'game_id' => $game->id,
-                'side' => 1,
-                'points' => $teamBScore,
-                'result' => $resultFor($teamBScore, $teamAScore),
-            ]);
-
-            $game->load('gamePlayers.queueEntry');
-            app(\App\Services\RankService::class)->applyGame($game);
-
-            foreach ($game->gamePlayers as $gamePlayer) {
-                $queueEntry = $gamePlayer->queueEntry;
-
-                if (! $queueEntry) {
-                    continue;
-                }
-
-                $queueEntry->update(['status' => $this->resolveQueueStatusAfterGame()]);
-
-                if (in_array($gamePlayer->player_id, $requeuePlayerIds, true)) {
-                    $this->requeue($queueEntry);
-                }
+            if ($game->status !== GameStatus::Playing->value) {
+                throw new BusinessRuleException('Game is not currently active.');
             }
 
-            $game->court()->update(['status' => CourtStatus::Available->value]);
+            $scores = collect([0, 1])->mapWithKeys(fn (int $teamSide) => [
+                $teamSide => Score::firstOrCreate(
+                    ['game_id' => $game->id, 'side' => $teamSide],
+                    ['points' => 0, 'result' => 'playing'],
+                ),
+            ]);
+            $updatedScore = $scores[$side]->points + $change;
+
+            if ($updatedScore < 0 || $updatedScore > FinishGameRequest::WINNING_SCORE) {
+                throw new BusinessRuleException('A score must stay between 0 and 11.');
+            }
+
+            $scores[$side]->update(['points' => $updatedScore]);
+            $scores[$side]->refresh();
+
+            if ($updatedScore === FinishGameRequest::WINNING_SCORE) {
+                return $this->completeGame(
+                    $game,
+                    (int) $scores[0]->points,
+                    (int) $scores[1]->points,
+                    [],
+                );
+            }
 
             return $game->load('gamePlayers.player', 'court', 'scores');
         });
+    }
+
+    private function completeGame(Game $game, int $teamAScore, int $teamBScore, array $requeuePlayerIds): Game
+    {
+        $game->update([
+            'status' => GameStatus::Completed->value,
+            'completed_at' => now(),
+        ]);
+
+        $resultFor = fn (int $mine, int $theirs) => $mine > $theirs
+            ? ScoreResult::Win->value
+            : ($mine < $theirs ? ScoreResult::Loss->value : ScoreResult::Draw->value);
+
+        Score::updateOrCreate(
+            ['game_id' => $game->id, 'side' => 0],
+            ['points' => $teamAScore, 'result' => $resultFor($teamAScore, $teamBScore)],
+        );
+        Score::updateOrCreate(
+            ['game_id' => $game->id, 'side' => 1],
+            ['points' => $teamBScore, 'result' => $resultFor($teamBScore, $teamAScore)],
+        );
+
+        $game->load('gamePlayers.queueEntry');
+        app(RankService::class)->applyGame($game);
+
+        foreach ($game->gamePlayers as $gamePlayer) {
+            $queueEntry = $gamePlayer->queueEntry;
+
+            if (! $queueEntry) {
+                continue;
+            }
+
+            $queueEntry->update(['status' => $this->resolveQueueStatusAfterGame()]);
+
+            if (in_array($gamePlayer->player_id, $requeuePlayerIds, true)) {
+                $this->requeue($queueEntry);
+            }
+        }
+
+        $game->court()->update(['status' => CourtStatus::Available->value]);
+
+        return $game->load('gamePlayers.player', 'court', 'scores');
     }
 
     protected function resolveQueueStatusAfterGame(): string

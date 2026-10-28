@@ -12,9 +12,11 @@ return [
         ['name' => 'Mythic', 'min' => 1900],
     ],
 
-    'win' => 25,
-    'loss' => 15,
-    'draw' => 5,
+    'win' => 20,
+    'win_margin' => 1,
+    'loss' => 5,
+    'loss_margin' => 1,
+    'draw' => 0,
 
     // Opponent-tier adjustment: +/- gap_step per tier of difference, up to gap_max tiers
     'gap_step' => 5,

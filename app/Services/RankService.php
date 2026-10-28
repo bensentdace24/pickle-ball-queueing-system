@@ -85,14 +85,18 @@ class RankService
 
         $step = (int) config('ranking.gap_step');
         $max = (int) config('ranking.gap_max');
+        $margin = min(11, abs($scores[0]->points - $scores[1]->points));
 
         foreach ([0, 1] as $side) {
             $gap = max(-$max, min($max, $teamIndex[1 - $side] - $teamIndex[$side]));
             $bonus = (int) round($gap * $step);
 
             $delta = match ($scores[$side]->result) {
-                'win' => (int) config('ranking.win') + $bonus,
-                'loss' => -max((int) config('ranking.min_loss'), (int) config('ranking.loss') - $bonus),
+                'win' => (int) config('ranking.win') + $margin * (int) config('ranking.win_margin') + $bonus,
+                'loss' => -max(
+                    (int) config('ranking.min_loss'),
+                    (int) config('ranking.loss') + $margin * (int) config('ranking.loss_margin') - $bonus
+                ),
                 default => (int) config('ranking.draw'),
             };
 

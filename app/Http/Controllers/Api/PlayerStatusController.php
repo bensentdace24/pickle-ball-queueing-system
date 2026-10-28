@@ -10,6 +10,7 @@ use App\Http\Traits\ApiResponse;
 use App\Models\Matchup;
 use App\Models\Player;
 use App\Models\Queue;
+use App\Models\Court;
 use Illuminate\Support\Facades\DB;
 use App\Services\WaitEstimator;
 use App\Exceptions\BusinessRuleException;
@@ -44,6 +45,7 @@ class PlayerStatusController extends Controller
                 'player' => new PlayerResource($player),
                 'queue' => null,
                 'matchup' => null,
+                'active_courts' => $this->activeCourts(),
             ], $record));
         }
 
@@ -88,7 +90,58 @@ class PlayerStatusController extends Controller
             'player' => new PlayerResource($player),
             'queue' => new QueueResource($entry),
             'matchup' => $matchup,
+            'active_courts' => $this->activeCourts(),
         ], $record));
+    }
+
+    /** Public waiting-room view: expose only display names, never phone or QR data. */
+    private function activeCourts(): array
+    {
+        return Court::where('status', 'playing')
+            ->whereHas('activeGame')
+            ->with('activeGame.gamePlayers.player')
+            ->orderBy('id')
+            ->get()
+            ->map(function (Court $court) {
+                $game = $court->activeGame;
+                $players = $game->gamePlayers->map(fn($gamePlayer) => [
+                    'id' => $gamePlayer->player->id,
+                    'name' => $gamePlayer->player->name,
+                    'skill_level' => $gamePlayer->player->skill_level,
+                ])->values();
+                $team = fn(int $side) => [
+                    'players' => $game->gamePlayers
+                        ->where('side', $side)
+                        ->map(fn($gamePlayer) => [
+                            'id' => $gamePlayer->player->id,
+                            'name' => $gamePlayer->player->name,
+                            'skill_level' => $gamePlayer->player->skill_level,
+                        ])->values(),
+                    'points' => null,
+                    'result' => null,
+                ];
+
+                return [
+                    'id' => $court->id,
+                    'name' => $court->name,
+                    'status' => $court->status,
+                    'active_game' => [
+                        'id' => $game->id,
+                        'status' => $game->status,
+                        'started_at' => $game->started_at,
+                        'completed_at' => null,
+                        'duration_minutes' => $game->duration_minutes,
+                        'ends_at' => $game->duration_minutes && $game->started_at
+                            ? $game->started_at->copy()->addMinutes($game->duration_minutes)
+                            : null,
+                        'players' => $players,
+                        'team_a' => $team(0),
+                        'team_b' => $team(1),
+                        'skill_warning' => null,
+                    ],
+                ];
+            })
+            ->all();
     }
 
     private function record(Player $player): array

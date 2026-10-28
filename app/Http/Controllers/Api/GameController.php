@@ -11,6 +11,7 @@ use App\Models\Game;
 use App\Services\GameService;
 use Illuminate\Http\Request;
 use App\Http\Requests\FinishGameRequest;
+use App\Http\Requests\UpdateGameScoreRequest;
 use App\Http\Requests\SmartAssignRequest;
 
 class GameController extends Controller
@@ -64,6 +65,20 @@ class GameController extends Controller
         );
 
         return $this->success(new GameResource($game), 'Game finished.');
+    }
+
+    public function updateScore(UpdateGameScoreRequest $request, Game $game)
+    {
+        $game = $this->games->adjustScore(
+            $game,
+            $request->validated('side'),
+            $request->validated('change'),
+        );
+
+        return $this->success(
+            new GameResource($game),
+            $game->status === 'completed' ? 'Game finished at 11 points.' : 'Score updated.',
+        );
     }
 
     public function smartAssign(SmartAssignRequest $request)
